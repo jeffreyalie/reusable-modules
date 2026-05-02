@@ -1,0 +1,80 @@
+#cloud-config
+
+# ---------------------------------------------------------------
+# Hostname
+# ---------------------------------------------------------------
+hostname: ${vm_hostname}
+fqdn: ${vm_hostname}.local
+manage_etc_hosts: true
+
+# ---------------------------------------------------------------
+# Network – DHCP on primary interface (enp5s0 for LXD Ubuntu VMs)
+# cloud-init writes a netplan config and applies it on first boot.
+# ---------------------------------------------------------------
+network:
+  version: 2
+  ethernets:
+    enp5s0:
+      dhcp4: true
+      dhcp6: false
+      dhcp4-overrides:
+        route-metric: 100
+
+# ---------------------------------------------------------------
+# Users – ansible user with SSH key, no password, passwordless sudo
+# ---------------------------------------------------------------
+users:
+  - name: ansible
+    gecos: "Ansible Automation User"
+    groups:
+      - sudo
+      - adm
+    shell: /bin/bash
+    lock_passwd: true           # disable password login entirely
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - ${ansible_ssh_public_key}
+
+# ---------------------------------------------------------------
+# Packages to install on first boot
+# ---------------------------------------------------------------
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - wget
+  - git
+  - python3
+  - python3-pip
+  - openssh-server
+  - ca-certificates
+  - net-tools
+
+# ---------------------------------------------------------------
+# SSH hardening
+# ---------------------------------------------------------------
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-ansible.conf
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      PubkeyAuthentication yes
+      AuthorizedKeysFile .ssh/authorized_keys
+      X11Forwarding no
+    owner: root:root
+    permissions: "0644"
+
+# ---------------------------------------------------------------
+# Final commands after all modules run
+# ---------------------------------------------------------------
+runcmd:
+  - systemctl restart ssh
+  - echo "cloud-init provisioning complete" >> /var/log/cloud-init-done.log
+
+# ---------------------------------------------------------------
+# Signal completion
+# ---------------------------------------------------------------
+final_message: |
+  Ubuntu VM provisioned successfully.
+  Hostname : ${vm_hostname}
+  Ansible user is ready. Connect with: ssh ansible@<IP>
